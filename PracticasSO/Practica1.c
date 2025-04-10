@@ -131,11 +131,12 @@ waitpid(pid1, NULL, 0);
 waitpid(pid2, NULL, 0);
 waitpid(pid3, NULL, 0);
 
+down(sem_resultados);
 printf("Resultados finales:\n");
 for (int i = 0; i < 3; i++) {
     printf("Resultado del hijo %d: %d\n", i + 1, resultados[i]);
 }
-
+up(sem_resultados);
 
 shmdt(shared_mem);
 shmctl(shm_id, IPC_RMID, NULL);

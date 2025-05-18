@@ -35,7 +35,6 @@ int contarPalabras(const char *cadena) {
         }
         cadena++;
     }
-
     return palabras;
 }
 
@@ -77,13 +76,13 @@ int main(void) {
         printf("Ingrese una frase de 10 palabras: ");
 
         //Lee la frase del usuario
-        fgets((*datosCompartidos).datos.mensaje, sizeof((*datosCompartidos).datos.mensaje), stdin);
+        fgets((*datosCompartidos).datos.mensaje, sizeof(datosCompartidos->datos.mensaje), stdin);
 
         //Elimina el salto de línea final que incluye fgets
-        (*datosCompartidos).datos.mensaje[strcspn((*datosCompartidos).datos.mensaje, "\n")] = '\0';
+        (*datosCompartidos).datos.mensaje[strcspn(datosCompartidos->datos.mensaje, "\n")] = '\0';
 
         //Cuenta cuántas palabras hay
-        numPalabras = contarPalabras((*datosCompartidos).datos.mensaje);
+        numPalabras = contarPalabras(datosCompartidos->datos.mensaje);
 
         //Informa si el número no es válido
         if (numPalabras != 10){
@@ -92,18 +91,18 @@ int main(void) {
     } while (numPalabras != 10);
 
     //Guarda el PID del cliente en la estructura compartida
-    (*datosCompartidos).datos.pidCliente = getpid();
+    datosCompartidos->datos.pidCliente = getpid();
 
     printf("Enviando mensaje al servidor...\n");
 
     //Señaliza al servidor que ya puede leer el mensaje
-    sem_post(&(*datosCompartidos).semCliente);
+    sem_post(&datosCompartidos->semCliente);
 
     //Espera la respuesta del servidor
-    sem_wait(&(*datosCompartidos).semServidor);
+    sem_wait(&datosCompartidos->semServidor);
 
     //Obtiene la clave específica de memoria asignada al cliente
-    key_t claveCliente = (*datosCompartidos).claveCliente;
+    key_t claveCliente = datosCompartidos->claveCliente;
 
     //Se conecta a la memoria específica que el servidor creó para este cliente
     int shmidCliente = shmget(claveCliente, sizeof(MemoriaCompartida), 0666);
@@ -123,7 +122,7 @@ int main(void) {
 
     //Muestra la respuesta procesada del servidor
     printf("Respuesta del servidor recibida\n");
-    printf("Mensaje procesado: %s\n", (*memCliente).datos.mensaje);
+    printf("Mensaje procesado: %s\n", memCliente->datos.mensaje);
 
     //Libera ambas memorias compartidas
     shmdt(memCliente);

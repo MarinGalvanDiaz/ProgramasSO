@@ -43,6 +43,7 @@ void liberarRecursos() {
     pthread_mutex_destroy(&mutexArchivo);
     pthread_cond_destroy(&condArchivoListo);
     remove("frases.txt");
+    remove("memoriaPrincipal");
     printf("Recursos liberados. Saliendo del servidor\n");
     exit(0);
 }
@@ -84,7 +85,6 @@ void *atencionCliente(void *arg) {
     if (shmid >= 0){
         shmctl(shmid, IPC_RMID, NULL);
     }
-        
     pthread_exit(NULL);
 }
 

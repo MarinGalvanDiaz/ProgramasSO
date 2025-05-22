@@ -1,12 +1,28 @@
 #include <ncurses.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <openssl/evp.h>
-#include <string.h>
+#include <time.h>
+
+#define MAX_LINEA 1024
+
+char usuario_autenticado[30]; // Usuario que inició sesión
 
 void handleErrors(const char *msg) {
     fprintf(stderr, "%s\n", msg);
     exit(1);
+}
+
+int validar_contrasena_segura(const char *pass) {
+    if (strlen(pass) < 8) return 0;
+    int tiene_letra = 0, tiene_numero = 0, tiene_simbolo = 0;
+    for (int i = 0; pass[i]; i++) {
+        if ((pass[i] >= 'A' && pass[i] <= 'Z') || (pass[i] >= 'a' && pass[i] <= 'z')) tiene_letra = 1;
+        else if (pass[i] >= '0' && pass[i] <= '9') tiene_numero = 1;
+        else tiene_simbolo = 1;
+    }
+    return tiene_letra && tiene_numero && tiene_simbolo;
 }
 
 int aes_encrypt(unsigned char *plaintext, int plaintext_len,
@@ -30,7 +46,6 @@ int aes_encrypt(unsigned char *plaintext, int plaintext_len,
     ciphertext_len += len;
 
     EVP_CIPHER_CTX_free(ctx);
-
     return ciphertext_len;
 }
 
@@ -55,22 +70,97 @@ int aes_decrypt(unsigned char *ciphertext, int ciphertext_len,
     plaintext_len += len;
 
     EVP_CIPHER_CTX_free(ctx);
-
     return plaintext_len;
 }
 
+void guardar_usuario_cifrado(const char *usuario, const char *password,
+                             unsigned char *key, unsigned char *iv) {
+    char texto[256];
+    snprintf(texto, sizeof(texto), "%s,%s", usuario, password);
 
-void get_hidden_input(WINDOW *win, int y, int x, char *input, int max_len)
-{
+    unsigned char ciphertext[512];
+    int cipher_len = aes_encrypt((unsigned char *)texto, strlen(texto), key, iv, ciphertext);
+
+    FILE *f = fopen("usuarios_cifrado.txt", "a");
+    if (!f) {
+        perror("No se pudo abrir archivo para guardar");
+        return;
+    }
+
+    for (int i = 0; i < cipher_len; i++)
+        fprintf(f, "%02x", ciphertext[i]);
+    fprintf(f, "\n");
+    fclose(f);
+}
+
+void escribir_log_cifrado(const char *usuario, unsigned char *key, unsigned char *iv) {
+    time_t ahora = time(NULL);
+    struct tm *tm_info = localtime(&ahora);
+    char fecha_hora[64];
+    strftime(fecha_hora, sizeof(fecha_hora), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    char log_entry[128];
+    snprintf(log_entry, sizeof(log_entry), "Usuario: %s - Fecha: %s", usuario, fecha_hora);
+
+    unsigned char ciphertext[256];
+    int len = aes_encrypt((unsigned char*)log_entry, strlen(log_entry), key, iv, ciphertext);
+
+    FILE *f = fopen("log_cifrado.txt", "a");
+    if (!f) {
+        perror("Error al abrir archivo de log");
+        return;
+    }
+
+    for (int i = 0; i < len; i++)
+        fprintf(f, "%02x", ciphertext[i]);
+    fprintf(f, "\n");
+    fclose(f);
+}
+
+int validar_login(const char *usuario, const char *password,
+                  unsigned char *key, unsigned char *iv) {
+    FILE *f = fopen("usuarios_cifrado.txt", "r");
+    if (!f) return 0;
+
+    char linea[MAX_LINEA];
+    while (fgets(linea, sizeof(linea), f)) {
+        int len = strlen(linea);
+        if (linea[len - 1] == '\n') linea[len - 1] = '\0';
+
+        int cipher_len = strlen(linea) / 2;
+        unsigned char ciphertext[512];
+        for (int i = 0; i < cipher_len; i++) {
+            sscanf(linea + 2*i, "%2hhx", &ciphertext[i]);
+        }
+
+        unsigned char plaintext[512];
+        int plain_len = aes_decrypt(ciphertext, cipher_len, key, iv, plaintext);
+        plaintext[plain_len] = '\0';
+
+        char *coma = strchr((char *)plaintext, ',');
+        if (!coma) continue;
+
+        *coma = '\0';
+        char *u = (char *)plaintext;
+        char *p = coma + 1;
+
+        if (strcmp(u, usuario) == 0 && strcmp(p, password) == 0) {
+            fclose(f);
+            return 1;
+        }
+    }
+    fclose(f);
+    return 0;
+}
+
+void get_hidden_input(WINDOW *win, int y, int x, char *input, int max_len) {
     int ch, i = 0;
     wmove(win, y, x);
     wrefresh(win);
-    while ((ch = wgetch(win)) != '\n' && i < max_len - 1)
-    {
-        if (ch == KEY_BACKSPACE || ch == 127)
-        {
-            if (i > 0)
-            {
+    while ((ch = wgetch(win)) != '\n' && i < max_len - 1) {
+        if (ch == 27) return;
+        if (ch == KEY_BACKSPACE || ch == 127) {
+            if (i > 0) {
                 i--;
                 int cur_y, cur_x;
                 getyx(win, cur_y, cur_x);
@@ -78,9 +168,7 @@ void get_hidden_input(WINDOW *win, int y, int x, char *input, int max_len)
                 wmove(win, cur_y, cur_x - 1);
                 wrefresh(win);
             }
-        }
-        else if (ch >= 32 && ch <= 126)
-        {
+        } else if (ch >= 32 && ch <= 126) {
             input[i++] = ch;
             waddch(win, '*');
             wrefresh(win);
@@ -89,197 +177,209 @@ void get_hidden_input(WINDOW *win, int y, int x, char *input, int max_len)
     input[i] = '\0';
 }
 
-void limpiar_linea(WINDOW *win, int y, int x, int ancho)
-{
-    mvwprintw(win, y, x, "%-*s", ancho, "");
+void pantalla_bienvenida(WINDOW *win, const char *usuario) {
+    wclear(stdscr);
+    refresh();
+    werase(win); box(win, 0, 0);
+    mvwprintw(win, 2, 2, "Bienvenid@, %s", usuario);
+    mvwprintw(win, 4, 2, "La sesi\303\263n finalizar\303\241 en 10 segundos...");
     wrefresh(win);
+    napms(10000);
+    endwin();
+    exit(0);
 }
 
-void pantalla_login(WINDOW *win)
-{
-    char username[30], password[30];
-    int intentos = 0, success = 0;
-    int width = 60;
+void mostrar_logs(WINDOW *win, unsigned char *key, unsigned char *iv) {
+    FILE *f = fopen("log_cifrado.txt", "r");
+    if (!f) {
+        mvwprintw(win, 2, 2, "No se pudo abrir log_cifrado.txt");
+        wrefresh(win);
+        napms(2000);
+        return;
+    }
 
-    while (!success && intentos < 3)
-    {
-        werase(win);
-        box(win, 0, 0);
-        mvwprintw(win, 1, (width - 18) / 2, "Inicio de Sesión");
-        mvwprintw(win, 3, 2, "Usuario:");
-        mvwprintw(win, 5, 2, "Contraseña:");
+    wclear(stdscr);
+    refresh();
+    werase(win); box(win, 0, 0);
+    mvwprintw(win, 1, 2, "Registros de inicio de sesi\303\263n:");
+
+    char linea[MAX_LINEA];
+    int y = 3;
+
+    while (fgets(linea, sizeof(linea), f)) {
+        int len = strlen(linea);
+        if (linea[len - 1] == '\n') linea[len - 1] = '\0';
+
+        int cipher_len = strlen(linea) / 2;
+        unsigned char ciphertext[256];
+        for (int i = 0; i < cipher_len; i++)
+            sscanf(linea + 2*i, "%2hhx", &ciphertext[i]);
+
+        unsigned char plaintext[256];
+        int plain_len = aes_decrypt(ciphertext, cipher_len, key, iv, plaintext);
+        plaintext[plain_len] = '\0';
+
+        if (y < LINES - 2) {
+            mvwprintw(win, y++, 2, "%s", plaintext);
+        } else {
+            mvwprintw(win, y, 2, "(Demasiados registros para mostrar)");
+            break;
+        }
+    }
+
+    fclose(f);
+    mvwprintw(win, y + 2, 2, "Presione una tecla para volver...");
+    wrefresh(win);
+    wgetch(win);
+}
+
+void acceso_admin(WINDOW *win, unsigned char *key, unsigned char *iv) {
+    char usuario[30], pass[30];
+
+    wclear(stdscr);
+    refresh();
+    werase(win); box(win, 0, 0);
+    mvwprintw(win, 1, 2, "Modo Administrador");
+    mvwprintw(win, 3, 2, "Usuario: ");
+    mvwprintw(win, 5, 2, "Clave: ");
+    wrefresh(win);
+
+    echo();
+    mvwgetnstr(win, 3, 11, usuario, sizeof(usuario) - 1);
+    noecho();
+    get_hidden_input(win, 5, 9, pass, sizeof(pass));
+
+    if (strcmp(usuario, "admin") == 0 && strcmp(pass, "admin123!") == 0) {
+        mostrar_logs(win, key, iv);
+    } else {
+        mvwprintw(win, 7, 2, "Credenciales incorrectas.");
+        wrefresh(win);
+        napms(1500);
+    }
+}
+
+
+void pantalla_login(WINDOW *win, unsigned char *key, unsigned char *iv) {
+    char usuario[30], password[30];
+    int intentos = 0, logueado = 0;
+
+    while (!logueado && intentos < 3) {
+        wclear(stdscr);
+        refresh();
+        werase(win); box(win, 0, 0);
+        mvwprintw(win, 1, 2, "Inicio de Sesi\303\263n");
+        mvwprintw(win, 3, 2, "Usuario: ");
+        mvwprintw(win, 5, 2, "Contrase\303\261a: ");
         wrefresh(win);
 
         echo();
-        mvwgetnstr(win, 3, 12, username, sizeof(username) - 1);
+        mvwgetnstr(win, 3, 11, usuario, sizeof(usuario) - 1);
         noecho();
+
         get_hidden_input(win, 5, 14, password, sizeof(password));
 
-
-        if (strcmp(username, "admin") == 0 && strcmp(password, "1234") == 0)
-        {
-            mvwprintw(win, 7, 2, "¡Acceso concedido!");
+        if (validar_login(usuario, password, key, iv)) {
+            strcpy(usuario_autenticado, usuario);
+            escribir_log_cifrado(usuario, key, iv);
+            mvwprintw(win, 7, 2, "\302\241Acceso concedido!");
             wrefresh(win);
-            success = 1;
+            napms(1500);
+            pantalla_bienvenida(win, usuario_autenticado);
+        } else {
+            mvwprintw(win, 7, 2, "Usuario o contrase\303\261a incorrectos.");
         }
-        else
-        {
-            intentos++;
-            mvwprintw(win, 7, 2, "Error. Intento %d de 3.", intentos);
-            wrefresh(win);
-            napms(1000);
-        }
-    }
-
-    if (!success)
-    {
-        mvwprintw(win, 9, 2, "Demasiados intentos. Cerrando...");
+        intentos++;
         wrefresh(win);
         napms(1500);
-        delwin(win);
+    }
+
+    if (!logueado) {
+        mvwprintw(win, 9, 2, "Demasiados intentos. Saliendo...");
+        wrefresh(win);
+        napms(1500);
         endwin();
         exit(1);
     }
-
-    mvwprintw(win, 9, 2, "Presione una tecla para continuar...");
-    werase(win);
-    box(win, 0, 0);
-    wrefresh(win);
-    flushinp();
 }
 
-void pantalla_registro(WINDOW *win)
-{
+void pantalla_registro(WINDOW *win, unsigned char *key, unsigned char *iv) {
     char usuario[30], pass1[30], pass2[30];
-    int width = 60;
-
-    while (1)
-    {
-        werase(win);
-        box(win, 0, 0);
-        mvwprintw(win, 1, (width - 17) / 2, "Registro de Usuario");
-
-        mvwprintw(win, 3, 2, "Nuevo usuario:");
-        mvwprintw(win, 5, 2, "Contraseña:");
-        mvwprintw(win, 7, 2, "Repetir contraseña:");
-
-        // Limpiar entradas anteriores
-        mvwprintw(win, 3, 18, "%-30s", " ");
-        mvwprintw(win, 5, 14, "%-30s", " ");
-        mvwprintw(win, 7, 22, "%-30s", " ");
-        wrefresh(win);
+    while (1) {
+      
+        wclear(stdscr);
+        refresh();
+        werase(win); box(win, 0, 0);
+        mvwprintw(win, 1, 2, "Registro de Usuario");
+        mvwprintw(win, 3, 2, "Nuevo usuario: ");
+        mvwprintw(win, 5, 2, "Contrase\303\261a: ");
+        mvwprintw(win, 7, 2, "Repetir contrase\303\261a: ");
+        mvwprintw(win, 9, 2, ">=8 chars, 1 letra, 1 n\303\272mero, 1 s\303\255mbolo");
 
         echo();
         mvwgetnstr(win, 3, 18, usuario, sizeof(usuario) - 1);
         noecho();
+
         get_hidden_input(win, 5, 14, pass1, sizeof(pass1));
         get_hidden_input(win, 7, 22, pass2, sizeof(pass2));
 
-        if (strlen(usuario) == 0 || strlen(pass1) == 0 || strlen(pass2) == 0)
-        {
-            mvwprintw(win, 9, 2, "Campos vacíos no permitidos.");
-            wclrtoeol(win);
-        }
-        else if (strcmp(pass1, pass2) != 0)
-        {
-            mvwprintw(win, 9, 2, "Las contraseñas no coinciden.");
-            wclrtoeol(win);
-        }
-        else
-        {
-            mvwprintw(win, 9, 2, "Registro exitoso.");
-            
+        if (strcmp(pass1, pass2) != 0) {
+            mvwprintw(win, 10, 2, "Las contrase\303\261as no coinciden.");
+        } else if (!validar_contrasena_segura(pass1)) {
+            mvwprintw(win, 10, 2, "Contrase\303\261a insegura.");
+        } else if (validar_login(usuario, pass1, key, iv)) {
+            mvwprintw(win, 10, 2, "El usuario ya existe.");
+        } else {
+            guardar_usuario_cifrado(usuario, pass1, key, iv);
+            mvwprintw(win, 10, 2, "Registro exitoso.");
             wrefresh(win);
-            napms(1000);
+            napms(1500);
             break;
         }
-
-        
-
         wrefresh(win);
         napms(1500);
     }
-
-    mvwprintw(win, 11, 2, "Presione una tecla para continuar...");
-    werase(win);
-    box(win, 0, 0);
-    wrefresh(win);
-    flushinp();
 }
 
-void menu_principal(WINDOW *win)
-{
+void menu_principal(WINDOW *win, unsigned char *key, unsigned char *iv) {
     int opcion = 0;
+    const int total_opciones = 3;
     keypad(win, TRUE);
-
-    while (1)
-    {
-        werase(win);    // Limpia todo
-        box(win, 0, 0); // Redibuja el borde
-        mvwprintw(win, 1, 2, "Bienvenido - Seleccione una opción:");
-
-        mvwprintw(win, 3, 4, opcion == 0 ? "> Iniciar Sesión" : "  Iniciar Sesión");
+    while (1) {
+        wclear(stdscr);
+        refresh();
+        werase(win); box(win, 0, 0);
+        mvwprintw(win, 1, 2, "Seleccione una opci\303\263n:");
+        mvwprintw(win, 3, 4, opcion == 0 ? "> Iniciar Sesi\303\263n" : "  Iniciar Sesi\303\263n");
         mvwprintw(win, 4, 4, opcion == 1 ? "> Registrarse" : "  Registrarse");
-        mvwprintw(win, 6, 4, "Use las flechas y ENTER para seleccionar");
-
+        mvwprintw(win, 5, 4, opcion == 2 ? "> Ver logs (admin)" : "  Ver logs (admin)");
+        mvwprintw(win, 7, 4, "Usa flechas y ENTER");
         wrefresh(win);
-        flushinp(); // Limpia entrada pendiente
 
         int ch = wgetch(win);
-        switch (ch)
-        {
-        case KEY_UP:
-            opcion = (opcion == 0) ? 1 : 0;
-            break;
-        case KEY_DOWN:
-            opcion = (opcion == 1) ? 0 : 1;
-            break;
-        case '\n':
-            werase(win); // Limpia ventana antes de ir a la otra pantalla
-            wrefresh(win);
-            flushinp();
-            if (opcion == 0)
-                pantalla_login(win);
-            else
-                pantalla_registro(win);
-            break;
+        switch (ch) {
+            case KEY_UP: opcion = (opcion - 1 + total_opciones) % total_opciones; break;
+            case KEY_DOWN: opcion = (opcion + 1) % total_opciones; break;
+            case '\n':
+                if (opcion == 0) pantalla_login(win, key, iv);
+                else if (opcion == 1) pantalla_registro(win, key, iv);
+                else if (opcion == 2) acceso_admin(win, key, iv);
+                break;
         }
     }
 }
 
-int main()
-{
+
+int main() {
+    unsigned char key[32] = "12345678901234567890123456789012";
+    unsigned char iv[16]  = "1234567890123456";
+
     initscr();
-    cbreak();
     noecho();
+    cbreak();
     keypad(stdscr, TRUE);
 
-    int height = 15, width = 60;
-    int starty = (LINES - height) / 2;
-    int startx = (COLS - width) / 2;
+    menu_principal(stdscr, key, iv);
 
-    WINDOW *win = newwin(height, width, starty, startx);
-    menu_principal(win);
-
-    delwin(win);
     endwin();
-    unsigned char key[32] = "0123456789abcdef0123456789abcdef";
-    unsigned char iv[16] = "abcdef9876543210";
-
-    unsigned char plaintext[] = "Mensaje super secreto que cifrar";
-    unsigned char ciphertext[128];
-    unsigned char decryptedtext[128];
-
-    int ciphertext_len = aes_encrypt(plaintext, strlen((char *)plaintext), key, iv, ciphertext);
-
-    printf("Texto cifrado (hex): ");
-    for (int i = 0; i < ciphertext_len; i++)
-        printf("%02x", ciphertext[i]);
-    printf("\n");
-
-    int decryptedtext_len = aes_decrypt(ciphertext, ciphertext_len, key, iv, decryptedtext);
-    decryptedtext[decryptedtext_len] = '\0'; // null terminate
-
-    printf("Texto descifrado: %s\n", decryptedtext);
     return 0;
 }

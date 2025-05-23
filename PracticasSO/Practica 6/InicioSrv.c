@@ -182,7 +182,8 @@ void pantalla_bienvenida(WINDOW *win, const char *usuario) {
     refresh();
     werase(win); box(win, 0, 0);
     mvwprintw(win, 2, 2, "Bienvenid@, %s", usuario);
-    mvwprintw(win, 4, 2, "La sesi\303\263n finalizar\303\241 en 10 segundos...");
+    //mvwprintw(win, 4, 2, "La sesi\303\263n finalizar\303\241 en 10 segundos...");
+    mvwprintw(win, 4, 2, "Este mensaje se autodestruir\303\241 en 10 segundos...");
     wrefresh(win);
     napms(10000);
     endwin();

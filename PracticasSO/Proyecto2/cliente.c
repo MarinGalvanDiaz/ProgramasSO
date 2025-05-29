@@ -306,55 +306,63 @@ void app_menu(const char *username)
     keypad(menu, TRUE);
 
     while (1)
+{
+    wclear(stdscr);
+    refresh();
+
+    // Título global en la parte superior de la pantalla
+    attron(COLOR_PAIR(3) | A_BOLD);
+    mvprintw(0, (COLS - strlen("CGM's Vinyls")) / 2, "CGM's Vinyls");
+    attroff(COLOR_PAIR(3) | A_BOLD);
+    refresh();
+
+    werase(menu);
+    box(menu, 0, 0);
+
+    // Subtítulo dentro del recuadro
+    wattron(menu, COLOR_PAIR(3) | A_BOLD);
+    mvwprintw(menu, 1, 2, " ¡Bienvenido, %s! ", username);
+    wattroff(menu, COLOR_PAIR(3) | A_BOLD);
+
+    for (int i = 0; i < n_options; i++)
     {
-        wclear(stdscr);
-        refresh();
-        werase(menu);
-        box(menu, 0, 0);
-        wattron(menu, COLOR_PAIR(3) | A_BOLD);
-        mvwprintw(menu, 1, 2, " ¡Bienvenido, %s! ", username);
-        wattroff(menu, COLOR_PAIR(3) | A_BOLD);
-
-        for (int i = 0; i < n_options; i++)
+        if (i == choice)
         {
-            if (i == choice)
-            {
-                wattron(menu, A_REVERSE);
-                mvwprintw(menu, 3 + i * 2, 4, "%s", options[i]);
-                wattroff(menu, A_REVERSE);
-            }
-            else
-            {
-                mvwprintw(menu, 3 + i * 2, 4, "%s", options[i]);
-            }
+            wattron(menu, A_REVERSE);
+            mvwprintw(menu, 3 + i * 2, 4, "%s", options[i]);
+            wattroff(menu, A_REVERSE);
         }
-        wrefresh(menu);
-
-        int ch = wgetch(menu);
-        if (ch == KEY_UP)
-            choice = (choice == 0) ? n_options - 1 : choice - 1;
-        else if (ch == KEY_DOWN)
-            choice = (choice == n_options - 1) ? 0 : choice + 1;
-        else if (ch == '\n')
+        else
         {
-            if (choice == n_options - 1)
-            {
-                delwin(menu);
-                endwin();
-                printf("\033[2J\033[H"); // Limpia y posiciona cursor
-                fflush(stdout);
-                pthread_exit(NULL);
-            }
-            // Aquí podrías llamar a funciones stubs, p.ej.:
-            // if (choice==0) view_catalog();
-            // ...
-            // Por ahora:
-            mvwprintw(menu, LINES - 6, 4, "Has elegido: %s", options[choice]);
-            mvwprintw(menu, LINES - 5, 4, "Presiona una tecla para volver...");
-            wrefresh(menu);
-            wgetch(menu);
+            mvwprintw(menu, 3 + i * 2, 4, "%s", options[i]);
         }
     }
+
+    wrefresh(menu);
+
+    int ch = wgetch(menu);
+    if (ch == KEY_UP)
+        choice = (choice == 0) ? n_options - 1 : choice - 1;
+    else if (ch == KEY_DOWN)
+        choice = (choice == n_options - 1) ? 0 : choice + 1;
+    else if (ch == '\n')
+    {
+        if (choice == n_options - 1)
+        {
+            delwin(menu);
+            endwin();
+            printf("\033[2J\033[H"); // Limpia terminal y mueve cursor arriba
+            fflush(stdout);
+            pthread_exit(NULL);
+        }
+
+        // Acción seleccionada
+        mvwprintw(menu, LINES - 6, 4, "Has elegido: %s", options[choice]);
+        mvwprintw(menu, LINES - 5, 4, "Presiona una tecla para volver...");
+        wrefresh(menu);
+        wgetch(menu);
+    }
+}
 
     delwin(menu);
     wclear(menu);

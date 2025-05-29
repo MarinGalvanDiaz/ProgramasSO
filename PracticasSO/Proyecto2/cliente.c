@@ -34,14 +34,15 @@ int check_server_connection()
     return 1;
 }
 
-void show_connection_error() {
+void show_connection_error()
+{
     int height = 7, width = 40;
     int starty = (LINES - height) / 2;
     int startx = (COLS - width) / 2;
 
     WINDOW *win = newwin(height, width, starty, startx);
     box(win, 0, 0);
-    wbkgd(win, COLOR_PAIR(2));  // Mismo esquema que login
+    wbkgd(win, COLOR_PAIR(2)); // Mismo esquema que login
 
     wattron(win, A_BOLD);
     mvwprintw(win, 2, (width - 23) / 2, "Error de conexi\303\263n");
@@ -54,7 +55,6 @@ void show_connection_error() {
     wgetch(win);
     delwin(win);
 }
-
 
 int initial_menu()
 {
@@ -127,14 +127,15 @@ int register_screen()
     noecho();
     get_password(win, 5, 14, password, MAX_PASS_LEN - 1);
 
-    if (!check_server_connection()) {
-    mvwprintw(win, 7, 2, "No se puede conectar al servidor");
-    mvwprintw(win, 8, 2, "Presione cualquier tecla...");
-    wrefresh(win);
-    wgetch(win);
-    delwin(win);
-    return 0;
-}
+    if (!check_server_connection())
+    {
+        mvwprintw(win, 7, 2, "No se puede conectar al servidor");
+        mvwprintw(win, 8, 2, "Presione cualquier tecla...");
+        wrefresh(win);
+        wgetch(win);
+        delwin(win);
+        return 0;
+    }
 
     unsigned char enc_u[128], enc_p[128];
     int len_u = encrypt_aes256((unsigned char *)username, strlen(username), enc_u, aes_key);
@@ -221,7 +222,7 @@ int login_screen(char *out_username)
     WINDOW *win = newwin(height, width, starty, startx);
     box(win, 0, 0);
     wbkgd(win, COLOR_PAIR(2));
-    mvwprintw(win, 1, (width - 12) / 2, " INICIAR SESI\303\213N ");
+    mvwprintw(win, 1, (width - 12) / 2, " Ingresar");
     mvwprintw(win, 3, 2, "Usuario: ");
     mvwprintw(win, 5, 2, "Contraseña: ");
     wrefresh(win);
@@ -337,7 +338,13 @@ void app_menu(const char *username)
         else if (ch == '\n')
         {
             if (choice == n_options - 1)
-                break; // Salir
+            {
+                delwin(menu);
+                endwin();
+                printf("\033[2J\033[H"); // Limpia y posiciona cursor
+                fflush(stdout);
+                pthread_exit(NULL);
+            }
             // Aquí podrías llamar a funciones stubs, p.ej.:
             // if (choice==0) view_catalog();
             // ...
@@ -354,38 +361,49 @@ void app_menu(const char *username)
     wrefresh(menu);
 }
 
-int main() {
-    // Validar conexión antes de mostrar login o registro
-    if (!check_server_connection()) {
-        show_connection_error();
-        endwin();
-        return 1;  // Termina programa por falta de conexión
-    }
+int main()
+{
+    
     initscr();
-    if (has_colors()) {
+    if (has_colors())
+    {
         start_color();
         init_pair(1, COLOR_WHITE, COLOR_BLUE);
         init_pair(2, COLOR_BLACK, COLOR_WHITE);
         init_pair(3, COLOR_YELLOW, COLOR_BLACK);
     }
-    cbreak(); noecho(); curs_set(0);
+    cbreak();
+    noecho();
+    curs_set(0);
 
     memset(aes_key, 0x2A, sizeof(aes_key));
-    srand(time(NULL));
 
-    
+    // Validar conexión antes de mostrar login o registro
+    if (!check_server_connection())
+    {
+        show_connection_error();
+        endwin();
+        return 1; // Termina programa por falta de conexión
+    }
 
     char username[MAX_USER_LEN];
-    while (1) {
+    while (1)
+    {
         int choice = initial_menu(); // Puedes crear un menú inicial para Login / Registro / Salir
-        if (choice == 0) {
-            if (login_screen(username)) {
+        if (choice == 0)
+        {
+            if (login_screen(username))
+            {
                 app_menu(username);
             }
-        } else if (choice == 1) {
+        }
+        else if (choice == 1)
+        {
             register_screen();
-        } else {
-            break;  // Salir
+        }
+        else
+        {
+            break; // Salir
         }
     }
 

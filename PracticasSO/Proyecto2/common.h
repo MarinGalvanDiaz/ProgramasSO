@@ -17,6 +17,7 @@
 #include <openssl/rand.h>
 #include <ctype.h>
 
+
 #define SHM_SIZE 1024
 #define MAX_USERS 100
 #define MAX_CLIENTS 100

@@ -107,12 +107,3 @@ void get_username(WINDOW *win, int y, int x, char *buffer, int max_len) {
     curs_set(0);
     noecho();
 }
-
-void generate_session_id(char *session_id, int size) {
-    const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    for (int i = 0; i < size - 1; i++) {
-        int key = rand() % (sizeof(charset) - 1);
-        session_id[i] = charset[key];
-    }
-    session_id[size - 1] = '\0';
-}

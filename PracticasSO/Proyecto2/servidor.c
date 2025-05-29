@@ -6,15 +6,19 @@
 ActiveClient active_clients[MAX_CLIENTS];
 int active_count = 0;
 
-void update_active_clients(pid_t pid, int session_id) {
-    for (int i = 0; i < active_count; i++) {
-        if (active_clients[i].pid == pid) {
+void update_active_clients(pid_t pid, int session_id)
+{
+    for (int i = 0; i < active_count; i++)
+    {
+        if (active_clients[i].pid == pid)
+        {
             active_clients[i].last_activity = time(NULL);
             return;
         }
     }
 
-    if (active_count < MAX_CLIENTS) {
+    if (active_count < MAX_CLIENTS)
+    {
         active_clients[active_count].pid = pid;
         active_clients[active_count].session_id = session_id;
         active_clients[active_count].last_activity = time(NULL);
@@ -121,7 +125,6 @@ void add_user(const char *username, const char *password)
     save_users();
 }
 
-
 void *handle_client(void *arg)
 {
     SharedData *shared_data = (SharedData *)arg;
@@ -185,43 +188,51 @@ void *handle_client(void *arg)
     return NULL;
 }
 
-void *server_ui_thread(void *arg) {
+void *server_ui_thread(void *arg)
+{
     initscr();
     start_color();
-    init_pair(1, COLOR_GREEN, COLOR_BLACK);  // Activo
-    init_pair(2, COLOR_RED, COLOR_BLACK);    // Inactivo
-    init_pair(3, COLOR_CYAN, COLOR_BLACK);   // Título
+    init_pair(1, COLOR_GREEN, COLOR_BLACK); // Activo
+    init_pair(2, COLOR_RED, COLOR_BLACK);   // Inactivo
+    init_pair(3, COLOR_CYAN, COLOR_BLACK);  // Título
 
-    cbreak(); noecho(); curs_set(0);
+    cbreak();
+    noecho();
+    curs_set(0);
     nodelay(stdscr, TRUE); // No bloquea getch()
 
-    WINDOW *server_win = newwin(20, 60, 1, 1);
-    box(server_win, 0, 0);
-    mvwprintw(server_win, 0, 2, " SERVIDOR EN EJECUCI\303\263N ");
-    wrefresh(server_win);
+    int win_height = 20;
+    int win_width = 60;
+    WINDOW *server_win = newwin(win_height, win_width, 1, 1);
 
-    while (1) {
+    char *title = " SERVIDOR EN EJECUCION ";
+    int title_pos = (win_width - strlen(title)) / 2;
+
+    while (1)
+    {
         werase(server_win);
         box(server_win, 0, 0);
+
         wattron(server_win, COLOR_PAIR(3) | A_BOLD);
-        mvwprintw(server_win, 0, 2, " SERVIDOR EN EJECUCI\303\263N ");
+        mvwprintw(server_win, 0, title_pos, "%s", title);
         wattroff(server_win, COLOR_PAIR(3) | A_BOLD);
 
         time_t now = time(NULL);
         int row = 2;
 
-        mvwprintw(server_win, row++, 1, "Clientes conectados: %d", active_count);
-        mvwprintw(server_win, row++, 1, "PID      Sesi\303\263n    Ultima Actividad");
+        mvwprintw(server_win, row++, 2, "Clientes conectados: %d", active_count);
+        mvwprintw(server_win, row++, 2, "PID      Sesion    Ultima Actividad");
 
-        for (int i = 0; i < active_count; i++) {
+        for (int i = 0; i < active_count && row < win_height - 3; i++)
+        {
             int seconds = (int)difftime(now, active_clients[i].last_activity);
 
             if (seconds <= 30)
-                wattron(server_win, COLOR_PAIR(1));  // Verde
+                wattron(server_win, COLOR_PAIR(1)); // Verde
             else
-                wattron(server_win, COLOR_PAIR(2));  // Rojo
+                wattron(server_win, COLOR_PAIR(2)); // Rojo
 
-            mvwprintw(server_win, row++, 1, "%-8d %-9d %3d seg",
+            mvwprintw(server_win, row++, 2, "%-8d %-9d %3d seg",
                       active_clients[i].pid,
                       active_clients[i].session_id,
                       seconds);
@@ -230,24 +241,34 @@ void *server_ui_thread(void *arg) {
             wattroff(server_win, COLOR_PAIR(2));
         }
 
-        mvwprintw(server_win, row + 1, 1, "Presione 'q' para salir.");
+        mvwprintw(server_win, win_height - 2, 2, "Presione 'q' para salir.");
         wrefresh(server_win);
 
         int ch = getch();
-        if (ch == 'q') break;
+        if (ch == 'q')
+        {
+            delwin(server_win);
+            endwin();
+            printf("\033[2J\033[H"); // Limpia y posiciona cursor
+            fflush(stdout);
+            pthread_exit(NULL);
+        };
 
         usleep(500000); // 0.5 segundos
     }
 
     delwin(server_win);
     endwin();
+
+    // Limpia la terminal (ANSI escape code)
+    printf("\033[2J\033[H");
+    fflush(stdout);
+
     pthread_exit(NULL);
 }
 
-
 int main()
 {
-    srand(time(NULL)); // Para generación de session_ids
 
     // Generar o cargar clave AES
     memset(aes_key, 0x2A, sizeof(aes_key));
